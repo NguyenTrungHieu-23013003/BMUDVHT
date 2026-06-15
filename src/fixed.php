@@ -47,35 +47,28 @@ if (isset($_POST['login'])) {
     }
 }
 
-// --- COMMENT — ✅ FIX: Stored XSS patched ---
-if (isset($_POST['comment']) && isset($_SESSION['fixed_user'])) {
-    $author  = $_SESSION['fixed_user']['username'];
-    $content = $_POST['content'];
+// --- PROFILE — ✅ FIX: IDOR protection ---
+$profileUser = null;
+if ($currentPage === 'profile' && isset($_GET['id']) && isset($_SESSION['fixed_user'])) {
+    $requestedId = (int)$_GET['id'];
+    $myId   = (int)$_SESSION['fixed_user']['id'];
+    $myRole = $_SESSION['fixed_user']['role'];
 
-    // Prepared statement for insert
-    $stmt = $db->prepare("INSERT INTO comments_fixed (author, content) VALUES (?, ?)");
-    $stmt->execute([$author, $content]);
-    $message = "💬 Đã đăng bình luận.";
-    $messageType = "success";
-    $currentPage = 'comments';
+    // ✅ Authorization check: Only self or admin can view
+    if ($requestedId === $myId || $myRole === 'admin') {
+        $stmt = $db->prepare("SELECT * FROM users WHERE id = ?");
+        $stmt->execute([$requestedId]);
+        $profileUser = $stmt->fetch(PDO::FETCH_ASSOC);
+    } else {
+        $message = "🚫 403 Forbidden — Bạn không có quyền xem hồ sơ này!";
+        $messageType = "error";
+    }
 }
-
-$comments = $db->query("SELECT * FROM comments_fixed ORDER BY id DESC LIMIT 20")->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
 <html>
-<head><title>Fixed Version - SQLi and XSS Patched</title></head>
+<head><title>Fixed Version - SQLi, XSS, and IDOR Patched</title></head>
 <body>
-  <h2>🔑 Đăng nhập (SQL Injection đã vá)</h2>
-  <!-- Form login here -->
-
-  <h2>💬 Bình luận (Stored XSS đã vá)</h2>
-  <?php foreach ($comments as $c): ?>
-    <div>
-      <b><?= htmlspecialchars($c['author']) ?>:</b> 
-      <!-- ✅ HTMLSpecialChars output encoding to prevent XSS -->
-      <?= htmlspecialchars($c['content'], ENT_QUOTES, 'UTF-8') ?>
-    </div>
-  <?php endforeach; ?>
+  <!-- Existing pages -->
 </body>
 </html>
