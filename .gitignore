@@ -1,0 +1,9 @@
+# Ignore SQLite DB files if any are created locally
+*.db
+*.sqlite
+*.sqlite3
+
+# Ignore IDE configs
+.vscode/
+.idea/
+.DS_Store

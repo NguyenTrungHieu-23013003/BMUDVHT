@@ -1,0 +1,36 @@
+services:
+
+  # Ứng dụng web có lỗ hổng — truy cập TRỰC TIẾP để tấn công
+  vulnapp:
+    build: .
+    container_name: vulnapp
+    ports:
+      - "8081:80"
+    volumes:
+      - db_data:/var/data
+    networks:
+      - appnet
+
+  # WAF ModSecurity — truy cập QUA ĐÂY để bị chặn 403
+  waf:
+    image: owasp/modsecurity-crs:nginx
+    container_name: modsec_waf
+    ports:
+      - "80:8080"
+    environment:
+      BACKEND: "http://vulnapp:80"
+      PORT: "8080"
+      MODSEC_RULE_ENGINE: "On"
+      PARANOIA: 1
+      ANOMALY_INBOUND: 5
+    networks:
+      - appnet
+    depends_on:
+      - vulnapp
+
+networks:
+  appnet:
+    driver: bridge
+
+volumes:
+  db_data:
