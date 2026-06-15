@@ -13,7 +13,12 @@ $db->exec("CREATE TABLE IF NOT EXISTS users (
     bio TEXT
 )");
 
-// Temporary plain seed for SQLi demonstration
+$db->exec("CREATE TABLE IF NOT EXISTS comments_fixed (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    author TEXT,
+    content TEXT
+)");
+
 if ($db->query("SELECT COUNT(*) FROM users")->fetchColumn() == 0) {
     $db->exec("INSERT INTO users VALUES (1,'admin','admin123','admin@vulnapp.local','admin','Quản trị viên hệ thống')");
     $db->exec("INSERT INTO users VALUES (2,'alice','alice456','alice@gmail.com','user','Nhân viên kế toán')");
@@ -27,7 +32,6 @@ if (isset($_POST['login'])) {
     $user = $_POST['username'];
     $pass = $_POST['password'];
 
-    // ✅ Prepared statement — SQL Injection is patched
     $stmt = $db->prepare("SELECT * FROM users WHERE username = ? AND password = ?");
     $stmt->execute([$user, $pass]);
     $result = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -42,16 +46,36 @@ if (isset($_POST['login'])) {
         $messageType = "error";
     }
 }
+
+// --- COMMENT — ✅ FIX: Stored XSS patched ---
+if (isset($_POST['comment']) && isset($_SESSION['fixed_user'])) {
+    $author  = $_SESSION['fixed_user']['username'];
+    $content = $_POST['content'];
+
+    // Prepared statement for insert
+    $stmt = $db->prepare("INSERT INTO comments_fixed (author, content) VALUES (?, ?)");
+    $stmt->execute([$author, $content]);
+    $message = "💬 Đã đăng bình luận.";
+    $messageType = "success";
+    $currentPage = 'comments';
+}
+
+$comments = $db->query("SELECT * FROM comments_fixed ORDER BY id DESC LIMIT 20")->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
 <html>
-<head><title>Fixed Version - SQLi Patched</title></head>
+<head><title>Fixed Version - SQLi and XSS Patched</title></head>
 <body>
   <h2>🔑 Đăng nhập (SQL Injection đã vá)</h2>
-  <form method="POST">
-    <input type="text" name="username" placeholder="Username">
-    <input type="password" name="password" placeholder="Password">
-    <button type="submit" name="login">Đăng nhập</button>
-  </form>
+  <!-- Form login here -->
+
+  <h2>💬 Bình luận (Stored XSS đã vá)</h2>
+  <?php foreach ($comments as $c): ?>
+    <div>
+      <b><?= htmlspecialchars($c['author']) ?>:</b> 
+      <!-- ✅ HTMLSpecialChars output encoding to prevent XSS -->
+      <?= htmlspecialchars($c['content'], ENT_QUOTES, 'UTF-8') ?>
+    </div>
+  <?php endforeach; ?>
 </body>
 </html>
