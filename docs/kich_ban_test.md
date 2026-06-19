@@ -6,16 +6,17 @@
 ---
 
 ### BƯỚC 0: Khởi động lại môi trường sạch (Clear Database & Reset)
-Trước khi test, hãy reset toàn bộ Database và Container về trạng thái ban đầu để tránh các bình luận rác hoặc session cũ ảnh hưởng đến kết quả:
+Trước khi test, hãy reset toàn bộ Database và Container về trạng thái ban đầu:
 
-Chạy lệnh sau trong PowerShell (trong thư mục `vuln-app-v3/vuln-app-v3`):
 ```powershell
 docker compose down -v
 docker compose up -d --build
 ```
-*Lệnh này sẽ xóa database cũ (`-v` volume), khởi tạo lại database sạch và bật cả hai cổng:*
+*Lệnh này sẽ xóa database cũ (`-v` volume), khởi tạo lại database sạch và bật tất cả các cổng:*
 *   **`http://localhost:8081`**: Truy cập trực tiếp (Dùng để test Bản Lỗi vs Bản Vá).
-*   **`http://localhost:80`**: Truy cập qua lớp ModSecurity WAF.
+*   **`http://localhost:8082`**: Truy cập qua lớp ModSecurity WAF.
+*   **`http://localhost:8083`**: Truy cập qua AI WAF (Groq LLM — cần `GROQ_API_KEY` trong `.env`).
+*   **`http://localhost:8083/waf-test`**: 🆕 **Test Console** — Giao diện trực quan so sánh 3 lớp phòng thủ.
 
 ---
 
@@ -38,7 +39,7 @@ docker compose up -d --build
    *   **Kết quả:** Báo lỗi `"Sai tên đăng nhập hoặc mật khẩu"`. Tấn công bị vô hiệu hóa hoàn toàn nhờ Prepared Statement.
 
 #### 3. Thử tấn công qua lớp bảo vệ WAF
-1. Truy cập qua cổng WAF: **`http://localhost:80/index.php`**
+1. Truy cập qua cổng WAF: **`http://localhost:8082/index.php`**
 2. Nhập payload: `' OR '1'='1' --`
 3. Ấn **Đăng nhập**
    *   **Kết quả:** Trình duyệt nhận về trang **403 Forbidden** từ ModSecurity WAF. Payload tấn công đã bị WAF phát hiện và chặn đứng từ vòng gửi xe.
@@ -68,7 +69,7 @@ docker compose up -d --build
    *   **Kết quả:** Bình luận hiển thị nguyên văn chuỗi `<script>alert('XSS')</script>` dưới dạng văn bản bình thường. **Không có popup nào hiện lên** nhờ hàm `htmlspecialchars()`.
 
 #### 4. Thử tấn công qua lớp bảo vệ WAF
-1. Truy cập qua cổng WAF: **`http://localhost:80/index.php?page=comments`**
+1. Truy cập qua cổng WAF: **`http://localhost:8082/index.php?page=comments`**
 2. Nhập payload tương tự và ấn gửi
    *   **Kết quả:** Lập tức bị WAF chặn về trang **403 Forbidden**.
 
@@ -108,3 +109,12 @@ docker compose up -d --build
 2. **Kết quả:** Cột **Password** giờ đây chỉ chứa các chuỗi hash bảo mật của thuật toán Bcrypt dạng:
    `$2y$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhu`
    *   *Giải thích:* Thuật toán Bcrypt là mã hóa một chiều (hashing). Dù hacker có lấy được chuỗi này cũng không thể giải mã ngược lại thành mật khẩu gốc để đi đăng nhập ở các dịch vụ khác của nạn nhân.
+
+---
+
+### BƯỚC 5: So sánh trực quan trên Test Console (AI WAF vs ModSecurity)
+
+1. Mở trình duyệt, truy cập bảng điều khiển tổng hợp: **`http://localhost:8083/waf-test`**
+2. Tại đây, hệ thống hiển thị giao diện Glassmorphism hiện đại với 4 thẻ ứng với 4 loại lỗ hổng.
+3. Nhấp vào các nút **⚔️ Tấn công**, **🛡️ ModSecurity** và **🤖 AI WAF** để xem phản hồi thời gian thực của từng lớp phòng thủ.
+4. **Kết quả điểm nhấn:** Giảng viên sẽ thấy **AI WAF (Groq)** có khả năng phân tích ngữ cảnh, chấm điểm rủi ro (Risk Score) chính xác và có thể nhận diện các cuộc tấn công phức tạp mà WAF truyền thống ModSecurity có thể bỏ sót.

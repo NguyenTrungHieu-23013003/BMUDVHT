@@ -5,11 +5,12 @@
 
 **Môn học:** An toàn thông tin  
 **Nhóm thực hiện:** Nhóm 5  
-**Môi trường lab:** Docker · PHP 8.2 · SQLite · ModSecurity WAF  
+**Môi trường lab:** Docker · PHP 8.2 · SQLite · ModSecurity WAF · AI WAF (Groq LLM)  
 **URL thực nghiệm:**
 - Phiên bản lỗi: `http://localhost:8081`
 - Phiên bản đã vá: `http://localhost:8081/fixed.php`
-- Qua WAF (ModSecurity): `http://localhost:80`
+- Qua WAF (ModSecurity): `http://localhost:8082`
+- Qua AI WAF (Groq): `http://localhost:8083`
 
 ---
 
@@ -29,30 +30,32 @@ Báo cáo này trình bày quá trình phân tích, tái hiện và vá 4 lỗ h
 ## 2. Kiến trúc hệ thống Lab
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    Attacker (Browser)                │
-└────────────┬──────────────────────┬─────────────────┘
-             │ :8081 (trực tiếp)    │ :80 (qua WAF)
-             ▼                      ▼
-    ┌─────────────────┐   ┌──────────────────────┐
-    │  vulnapp        │   │  ModSecurity WAF      │
-    │  PHP 8.2-Apache │◄──│  (OWASP CRS Nginx)   │
-    │  SQLite DB      │   │  PARANOIA Level 1     │
-    └────────┬────────┘   └──────────────────────┘
-             │
-    ┌────────▼────────┐
-    │  /var/data/     │
-    │  users.db       │
-    └─────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                       Attacker (Browser)                         │
+└────────┬───────────────────────┬────────────────────┬────────────┘
+         │ :8081 (trực tiếp)     │ :8082 (ModSec)     │ :8083 (AI WAF)
+         ▼                       ▼                     ▼
+┌─────────────────┐   ┌───────────────────┐  ┌──────────────────────┐
+│  vulnapp        │   │  ModSecurity WAF  │  │  AI WAF Middleware   │
+│  PHP 8.2-Apache │◄──│  (OWASP CRS Nginx)│  │  Python FastAPI      │
+│  SQLite DB      │   │  PARANOIA Level 1 │  │  Groq LLM (Llama 3)  │
+└────────┬────────┘   └───────────────────┘  └──────────┬───────────┘
+         │                                               │
+┌────────▼────────┐                           ┌──────────▼──────────┐
+│  /var/data/     │                           │  Groq API Cloud      │
+│  users.db       │                           │  llama-3.3-70b       │
+└─────────────────┘                           └─────────────────────┘
 ```
 
-**Mục đích hai luồng truy cập:**
+**Mục đích ba luồng truy cập:**
 - **`:8081`** — Tấn công trực tiếp, minh họa lỗ hổng hoạt động
-- **`:80`** — WAF chặn các payload phổ biến, minh họa lớp phòng thủ
+- **`:8082`** — ModSecurity WAF chặn các payload theo luật OWASP CRS
+- **`:8083`** — AI WAF (Groq LLM) phân tích ngữ cảnh, phân loại và chặn tấn công thông minh
 
 ---
 
 ## 3. Lỗ hổng 1 — SQL Injection (OWASP A03)
+
 
 ### 3.1 Định nghĩa
 SQL Injection xảy ra khi input người dùng được ghép trực tiếp vào câu truy vấn SQL mà không qua sanitization. Attacker có thể thao túng logic truy vấn, bypass xác thực, hoặc đọc toàn bộ database.
@@ -291,32 +294,42 @@ Browser → WAF (:80) → [Kiểm tra rule] → vulnapp (:80 nội bộ)
 
 ### 7.3 Demo WAF
 
-| Hành động | Qua :8081 (không WAF) | Qua :80 (có WAF) |
-|-----------|----------------------|-----------------|
-| Login bình thường | ✅ Vào được | ✅ Vào được |
-| Payload `' OR '1'='1' --` | ✅ Bypass thành công | 🚫 403 Blocked |
-| Payload `<script>alert()</script>` | ✅ Stored & executed | 🚫 403 Blocked |
+| Hành động | :8081 (Không WAF) | :8082 (ModSecurity) | :8083 (AI WAF) |
+|-----------|-------------------|---------------------|----------------|
+| Login bình thường | ✅ Vào được | ✅ Vào được | ✅ Vào được |
+| SQLi `' OR '1'='1' --` | ✅ Bypass thành công | 🚫 403 Blocked | 🚫 403 Blocked |
+| XSS `<script>alert()</script>` | ✅ Stored & executed | 🚫 403 Blocked | 🚫 403 Blocked |
+| IDOR `?id=2` thay vì `?id=3` | ✅ Xem được | ✅ Không chặn | 🚫 403 Blocked |
 
-### 7.4 Hạn chế của WAF
+### 7.4 So sánh ModSecurity vs AI WAF
+
+| Tiêu chí | ModSecurity CRS | AI WAF (Groq LLM) |
+|----------|-----------------|-------------------|
+| Cơ chế | Regex/Signature | LLM phân loại ngữ cảnh |
+| Cập nhật luật | Thủ công | Tự động qua training |
+| Chặn IDOR | ❌ Không | ✅ Có |
+| False positive | Cao (paranoia cao) | Thấp hơn |
+| Độ trễ | ~1ms | ~300–800ms (API) |
+| Chi phí | Miễn phí | Tốn API token |
+
+### 7.5 Hạn chế của WAF
 
 > [!WARNING]
-> WAF **không phải giải pháp thay thế** cho code an toàn. WAF có thể bị bypass bởi:
-> - Encoding tricks (`%27` thay vì `'`)
-> - Payload phức tạp, ít phổ biến
-> - Logic flaws (như IDOR) — WAF không hiểu business logic
+> ModSecurity có thể bị bypass bởi encoding tricks hoặc payload phức tạp.
+> AI WAF phụ thuộc vào Groq API — có thể bị outage hoặc tăng độ trễ.
 
-**Kết luận:** WAF là lớp phòng thủ bổ sung (Defense in Depth), không phải giải pháp duy nhất.
+**Kết luận:** Phòng thủ tốt nhất là kết hợp cả ba lớp: Code an toàn + ModSecurity + AI WAF.
 
 ---
 
 ## 8. So sánh Trước và Sau vá
 
-| Tấn công | VulnApp (:8081) | FixedApp (/fixed.php) |
-|----------|----------------|----------------------|
-| SQLi bypass login | ✅ Thành công | ❌ Thất bại |
-| Stored XSS | ✅ Script chạy | ❌ Hiện text thuần |
-| IDOR xem profile người khác | ✅ Xem được | ❌ 403 Forbidden |
-| Dump mật khẩu gốc | ✅ Đọc được plaintext | ❌ Chỉ thấy bcrypt hash |
+| Tấn công | VulnApp :8081 | FixedApp /fixed.php | ModSec :8082 | AI WAF :8083 |
+|----------|---------------|---------------------|--------------|---------------|
+| SQLi bypass login | ✅ Thành công | ❌ Thất bại | 🛡️ Chặn 403 | 🤖 Chặn 403 |
+| Stored XSS | ✅ Script chạy | ❌ Hiện text thuần | 🛡️ Chặn 403 | 🤖 Chặn 403 |
+| IDOR xem profile người khác | ✅ Xem được | ❌ 403 Forbidden | ✅ Không chặn | 🤖 Chặn 403 |
+| Dump mật khẩu gốc | ✅ Đọc được plaintext | ❌ Chỉ thấy bcrypt hash | N/A | 🤖 Phát hiện |
 
 ---
 
