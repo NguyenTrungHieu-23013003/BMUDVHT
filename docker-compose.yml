@@ -11,12 +11,30 @@ services:
     networks:
       - appnet
 
+  # AI WAF Middleware — Claude-powered classifier (port 8083)
+  # Modes: MODE=block (return 403) | MODE=detect (log & forward)
+  ai_waf:
+    build: ./middleware
+    container_name: ai_waf
+    ports:
+      - "8083:8000"
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      MODE: ${WAF_MODE:-block}
+      BACKEND_URL: "http://vulnapp:80"
+      BLOCK_THRESHOLD: ${BLOCK_THRESHOLD:-70}
+    networks:
+      - appnet
+    depends_on:
+      - vulnapp
+
   # WAF ModSecurity — truy cập QUA ĐÂY để bị chặn 403
   waf:
     image: owasp/modsecurity-crs:nginx
     container_name: modsec_waf
     ports:
-      - "80:8080"
+      - "8082:8080"
     environment:
       BACKEND: "http://vulnapp:80"
       PORT: "8080"

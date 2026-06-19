@@ -25,7 +25,7 @@ Sau khi chạy thành công, bạn có thể truy cập các địa chỉ sau:
 |---|---|---|
 | **Bản lỗi (VulnApp)** | [http://localhost:8081](http://localhost:8081) | Tấn công trực tiếp, minh họa lỗ hổng hoạt động |
 | **Bản vá (FixedApp)** | [http://localhost:8081/fixed.php](http://localhost:8081/fixed.php) | Code đã vá bảo mật (Prepared statement, bcrypt, htmlspecialchars...) |
-| **Qua bảo vệ WAF** | [http://localhost:80](http://localhost:80) | Đi qua ModSecurity WAF (Sử dụng bộ luật OWASP CRS) |
+| **Qua bảo vệ WAF** | [http://localhost:8082](http://localhost:8082) | Đi qua ModSecurity WAF (Sử dụng bộ luật OWASP CRS) |
 
 ---
 
